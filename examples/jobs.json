@@ -1,0 +1,24 @@
+{
+  "defaults": {
+    "model_version": "1.6",
+    "inference_steps": 20,
+    "guidance_scale": 1.5,
+    "seed": 1247
+  },
+  "jobs": [
+    {
+      "id": "intro",
+      "video": "../inputs/video.mp4",
+      "audio": "../inputs/speech.wav",
+      "output": "../outputs/intro.mp4",
+      "options": {"duration": 5}
+    },
+    {
+      "id": "second",
+      "video": "../inputs/video2.mp4",
+      "audio": "../inputs/speech2.wav",
+      "output": "../outputs/second.mp4",
+      "options": {"guidance_scale": 2.0, "segment_seconds": 10}
+    }
+  ]
+}

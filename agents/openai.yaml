@@ -1,0 +1,4 @@
+interface:
+  display_name: "LatentSync 1.6 Colab 嘴型同步"
+  short_description: "透過 WSL 與 Colab GPU 執行 LatentSync 1.6，支援批次、參數調整與成品下載"
+  default_prompt: "使用 $latentsync-colab 將我的影片與音檔交給 Colab A100，以 LatentSync 1.6 做嘴型同步並下載成品。"
