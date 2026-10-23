@@ -24,6 +24,8 @@ description: 使用 WSL 或 Linux 的 Colab CLI，將本機影片與替換音檔
 5. runner 處理配置、上傳、安裝、推論、下載與驗證。勿把 CLI exit code 0 當成遠端執行成功：runner 另驗證成功標記、MP4 音訊／視訊、report 與雜湊。
 6. 回報成品、模型版本、參數、GPU、是否已停止 session。以真實 report 為準；本地驗證、FFmpeg 測試、mock CLI 測試都不等於完成真實 GPU 推論。
 
+執行前檢視代表影格：上游會排除偵測框寬小於50px或高小於80px的人臉，每個影格都要有合格人臉。遠景即使整片為1080p也可能失敗；必要時先建立人物區域的裁切放大副本，保留原片，並避開鏡頭晃動與遮擋。單純縮小整張影片可能讓問題更嚴重。若另選片段、裁切或貼回原構圖，回報實際片段起點與處理方式；目前runner沒有自動追蹤裁切參數。
+
 ## Session 與續跑
 
 - runner 自建 session 預設收尾停止；`--keep-session` 僅在確定要重用時指定。既有 `--session` 只有指定 `--stop-on-complete` 才會由 runner 停止。

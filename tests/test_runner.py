@@ -38,7 +38,7 @@ class FakeColab:
             token = re.search(r"LATENTSYNC_DRIVER_OK_[0-9a-f]+", code).group(0)
             parsed = ast.parse(code)
             for node in ast.walk(parsed):
-                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr != "run":
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr not in ("run", "Popen"):
                     continue
                 command = ast.literal_eval(node.args[0])
                 if "--job" in command:
@@ -338,6 +338,30 @@ class RunnerTests(unittest.TestCase):
 
 
 class UtilityTests(unittest.TestCase):
+    def test_driver_relays_os_stdout_and_stderr_into_kernel_stream(self):
+        # Jupyter captures Python's stdout object, not inherited child FDs.
+        kernel_stream = io.StringIO()
+        argument = "space ' quote $() literal"
+        code = runner.subprocess_driver([sys.executable, "-c",
+                "import os, sys; os.write(1, b'child stdout\\n'); os.write(2, b'child stderr\\n'); print(sys.argv[1])",
+                argument])
+        with contextlib.redirect_stdout(kernel_stream):
+            exec(code, {})
+        self.assertIn("child stdout\n", kernel_stream.getvalue())
+        self.assertIn("child stderr\n", kernel_stream.getvalue())
+        self.assertIn(argument, kernel_stream.getvalue())
+
+    def test_driver_keeps_error_details_and_never_emits_success_on_failure(self):
+        kernel_stream = io.StringIO()
+        code = runner.subprocess_driver([sys.executable, "-c",
+                "import os, sys; os.write(2, b'install failed: exact cause\\n'); sys.exit(7)"])
+        code += "print('UNEXPECTED_SUCCESS')\n"
+        with contextlib.redirect_stdout(kernel_stream), self.assertRaises(subprocess.CalledProcessError) as caught:
+            exec(code, {})
+        self.assertEqual(caught.exception.returncode, 7)
+        self.assertIn("install failed: exact cause", kernel_stream.getvalue())
+        self.assertNotIn("UNEXPECTED_SUCCESS", kernel_stream.getvalue())
+
     def test_input_preflight_rejects_bad_trim_before_gpu(self):
         result = subprocess.CompletedProcess([], 0, json.dumps({"streams": [{"codec_type": "video", "duration": "2"}, {"codec_type": "audio", "duration": "2"}]}), "")
         with mock.patch.object(runner.shutil, "which", return_value="ffprobe"), mock.patch.object(runner.subprocess, "run", return_value=result):

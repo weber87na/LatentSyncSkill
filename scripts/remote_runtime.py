@@ -18,6 +18,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 import urllib.request
@@ -40,7 +41,7 @@ BUFFALO_URL = "https://github.com/deepinsight/insightface/releases/download/v0.7
 FACE_FILES = ("det_10g.onnx", "2d106det.onnx")
 # All environment/bootstrap pins live here. Increment INSTALLER_REVISION if the
 # installation algorithm changes without changing a version below.
-INSTALLER_REVISION = 1
+INSTALLER_REVISION = 2
 PYTHON_VERSION = "3.10"
 UV_REQUIREMENT = "uv==0.8.22"
 BUILD_REQUIREMENTS = [
@@ -265,6 +266,45 @@ def child_env(root):
     return env
 
 
+def check_dependencies(python, root, env):
+    """Check requirements and actually decode H.264 before marking ready.
+
+    Decord 0.6.0's Linux wheel has a stale internal cp36 tag even though its
+    filename advertises py3-none. pip >=24.2 reports this metadata defect.
+    Only that exact warning is eligible for the functional decode check;
+    missing/conflicting requirements and decode failures remain fatal.
+    See https://github.com/dmlc/decord/issues/313.
+    """
+    command = [str(python), "-m", "pip", "check"]
+    checked = subprocess.run(command, env=env, text=True, encoding="utf-8",
+                             errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    diagnostics = checked.stdout or ""
+    print(diagnostics, end="" if diagnostics.endswith("\n") else "\n", flush=True)
+    known = "decord 0.6.0 is not supported on this platform"
+    lines = [line.strip() for line in diagnostics.splitlines() if line.strip()]
+    if checked.returncode and not (checked.returncode == 1 and lines == [known]):
+        raise subprocess.CalledProcessError(checked.returncode, command, output=diagnostics)
+    with tempfile.TemporaryDirectory(prefix="decode-check-", dir=root) as temporary:
+        video = Path(temporary) / "probe.mp4"
+        run_cmd(["ffmpeg", "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
+                 "testsrc2=size=64x64:rate=25:duration=0.64", "-c:v", "libx264",
+                 "-pix_fmt", "yuv420p", video], env=env)
+        smoke = (
+            "import platform, sys, decord, importlib.metadata\n"
+            "assert sys.platform == 'linux' and platform.machine() == 'x86_64'\n"
+            "assert decord.__version__ == '0.6.0'\n"
+            + ("assert 'Tag: cp36-cp36m-manylinux2010_x86_64' in importlib.metadata.distribution('decord').read_text('WHEEL').splitlines()\n" if checked.returncode else "") +
+            "reader = decord.VideoReader(sys.argv[1], ctx=decord.cpu(0))\n"
+            "assert len(reader) == 16\n"
+            "frames = reader.get_batch([0, 15]).asnumpy()\n"
+            "assert frames.shape == (2, 64, 64, 3) and frames.max() > 0\n"
+            "print('LATENTSYNC_DECORD_DECODE_OK', flush=True)\n"
+        )
+        run_cmd([python, "-c", smoke, video], env=env)
+    if checked.returncode:
+        print("Decord 0.6.0 wheel metadata warning accepted after successful Linux H.264 decode.", flush=True)
+
+
 def setup(root, model_version):
     root = managed_root(root)
     with root_lock(root):
@@ -294,7 +334,7 @@ def setup(root, model_version):
             run_cmd(pip + ["--no-build-isolation", "--no-deps"] + INSIGHTFACE_REQUIREMENTS, env=env)
             # insightface requirements not already provided by the inference set.
             run_cmd(pip + INSIGHTFACE_SUPPORT_REQUIREMENTS, env=env)
-            run_cmd([python, "-m", "pip", "check"], env=env)
+            check_dependencies(python, root, env)
             write_json(python.parent.parent / "environment.manifest.json", environment_manifest())
             ready.write_text(ENV_VERSION, encoding="ascii")
         repo = root / "upstream"

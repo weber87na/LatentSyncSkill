@@ -28,7 +28,7 @@ def build():
 4. 預覽並下載 MP4 和 report.json，然後 **執行階段 → 中斷連線並刪除執行階段**。
 
 此檔內嵌同版本 Python 原始碼，由 `scripts/build_notebook.py` 產生。修改原始碼後請重新產生 Notebook。
-GPU 實跑尚未在本次建置驗證；安裝與模型相容性仍需首次 Colab smoke test。請先用 3–5 秒片段。
+2026-10-24 已以相同 worker 從 WSL CLI 完成 Colab A100 40GB、LatentSync 1.6、FP16 真實推論，成功下載 2.32 秒有聲 MP4並自動停止 session。Notebook已驗證語法與輸出串流，未單獨在網頁介面端到端實跑；請先用短片確認素材品質。
 執行會使用 Colab 資源；Colab FAQ 禁止 creating deepfakes，請確認用途符合服務規則。
 """), code("""#@title 1. 展開執行程式（只寫入此 Notebook 的工具目錄）
 from pathlib import Path
@@ -41,6 +41,18 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 from config import resolve_options
 RUNTIME_ROOT = '/content/latentsync-skill'
+
+def run_remote(arguments):
+    # Relay child output through Python stdout so Colab displays it in the cell.
+    with subprocess.Popen(arguments, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, encoding='utf-8',
+                          errors='replace', bufsize=1) as process:
+        for line in process.stdout:
+            print(line, end='', flush=True)
+        returncode = process.wait()
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, process.args)
+
 print('工具已準備。')
 """, True), code("""#@title 2. 模型與媒體參數（先用預設值）
 model_version = "1.6" #@param ["1.6", "1.5"]
@@ -76,9 +88,9 @@ options = resolve_options({
 })
 print(json.dumps(options, ensure_ascii=False, indent=2))
 """, True), code("""#@title 3. 安裝環境與下載模型（首次較久；重複執行會檢查快取）
-subprocess.run([sys.executable, str(SCRIPT_DIR / 'remote_runtime.py'),
-                'setup', '--root', RUNTIME_ROOT,
-                '--model-version', options['model_version']], check=True)
+run_remote([sys.executable, str(SCRIPT_DIR / 'remote_runtime.py'),
+            'setup', '--root', RUNTIME_ROOT,
+            '--model-version', options['model_version']])
 """, True), code("""#@title 4. 選擇輸入方式並上傳
 input_mode = "upload" #@param ["upload", "paths"]
 video_path = "/content/video.mp4" #@param {type:"string"}
@@ -110,8 +122,8 @@ OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 job_file = SCRIPT_DIR / 'job.json'
 job_file.write_text(json.dumps({'video': video_path, 'audio': audio_path,
                                'output': str(OUTPUT), 'options': options}), encoding='utf-8')
-subprocess.run([sys.executable, str(SCRIPT_DIR / 'remote_runtime.py'),
-                'run', '--root', RUNTIME_ROOT, '--job', str(job_file)], check=True)
+run_remote([sys.executable, str(SCRIPT_DIR / 'remote_runtime.py'),
+            'run', '--root', RUNTIME_ROOT, '--job', str(job_file)])
 if not OUTPUT.is_file() or OUTPUT.stat().st_size == 0:
     raise RuntimeError('未產生成品，請看上方錯誤')
 print('完成:', OUTPUT)

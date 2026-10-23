@@ -8,7 +8,7 @@
 
 此專案參考 [minimax-h3-colab-skill](https://github.com/killkli/minimax-h3-colab-skill) 的本機 runner／遠端 Colab 工作流程，模型採用 [ByteDance LatentSync](https://github.com/bytedance/LatentSync)。runner 與包裝工具為獨立實作。
 
-**驗證狀態：** 已做離線流程測試、實際 FFmpeg 媒體測試、安裝測試及 Notebook 語法檢查；**尚未登入帳戶執行真實 Colab GPU 推論**。首次請先跑下面的 5 秒範例。GPU 分配、模型下載與 CUDA 相容性仍需以首次實跑為準。
+**驗證狀態：** 2026-10-24 已從 Ubuntu WSL 完成真實 Colab A100 40GB 推論：LatentSync 1.6、FP16、20 steps、guidance 1.5，成功產生 960×960、25fps、2.32 秒的有聲 MP4，下載與雜湊驗證通過，session 自動停止。73項離線測試亦全數通過。首次仍建議先跑短片確認你的素材品質；這項實跑不代表所有 GPU、長片或遮擋情況都已驗證。
 
 ## 你需要準備什麼
 
@@ -403,7 +403,7 @@ Notebook 內嵌必要 Python 程式，可使用上方連結或直接上傳本機
 | T4 顯存不足 | 1.6 需要更大的 GPU；不要把 high-mem 當成 GPU 顯存 |
 | `CUDA out of memory` | 先做5秒、`--segment-seconds 5`、降低 `--max-side`、試 `--vae-slicing` 或 A100 |
 | 很長的影片吃滿 RAM | 使用分段與縮小 max_side；上游會讀入片段全部影格，長片成本不能只看VRAM |
-| 沒偵測到臉／處理到別人 | 換清楚單人鏡頭，先裁掉其他人。上游選最大合格人臉；沒有 face-index 參數 |
+| 沒偵測到臉／處理到別人 | 每格的臉部偵測框至少寬50px、高80px；1080p遠景也可能太小。先選穩定單人鏡頭、裁切人物區域並適度放大，再推論；不要只縮小max_side。上游選最大合格人臉，沒有face-index或自動追蹤裁切參數 |
 | 嘴型不夠跟音 | 先用乾淨人聲；試 guidance1.5→2.0；固定seed比較 |
 | 臉部抖動或變形 | 降低guidance；關閉DeepCache；減少遮擋及側臉；增加steps不保證改善 |
 | 輸出少於預期長度 | shortest取較短者；改 audio或video；裁切與offset會改可用時長 |
@@ -414,6 +414,7 @@ Notebook 內嵌必要 Python 程式，可使用上方連結或直接上傳本機
 | `stop_failed` | 用progress中的session名稱執行stop，或在Colab介面管理工作階段 |
 | Hugging Face／GitHub下載失敗 | 看網路錯誤；保留原session時可重用快取。模型公開下載通常不需token |
 | CUDA／ONNX／套件相依衝突 | 保留log、report；不要改Colab kernel套件硬解。可改新的remote-root重建隔離環境 |
+| `decord 0.6.0 is not supported on this platform` | 更新此技能後重跑。Decord 官方 wheel 內部帶有舊 cp36 標籤；安裝器只對這一條警告檢查標籤並實際解碼 H.264，成功才繼續。其他相依問題仍會停止。詳見 [上游 issue](https://github.com/dmlc/decord/issues/313) |
 
 ## 使用範圍與第三方條款
 

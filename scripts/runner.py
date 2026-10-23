@@ -288,6 +288,24 @@ def execute_driver(client, session, work, code, timeout):
         raise CommandError("遠端程式沒有回傳成功標記；即使 Colab CLI 回傳 0，也不能視為成功。請檢查 log。")
 
 
+def subprocess_driver(arguments):
+    """Relay child output through Python stdout so Jupyter sends it over IOPub.
+
+    Inheriting the kernel's OS stdout does not reach Colab CLI. Pipe both child
+    streams and print them in the kernel, retaining diagnostics before cleanup.
+    """
+    return (
+        "import subprocess\n"
+        "with subprocess.Popen(" + repr(list(arguments)) + ", stdout=subprocess.PIPE, "
+        "stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', bufsize=1) as process:\n"
+        "    for line in process.stdout:\n"
+        "        print(line, end='', flush=True)\n"
+        "    returncode = process.wait()\n"
+        "    if returncode:\n"
+        "        raise subprocess.CalledProcessError(returncode, process.args)\n"
+    )
+
+
 def validate_gpu(jobs, gpu, reused=False):
     if not reused and gpu == "T4" and any(job["options"]["model_version"] == "1.6" for job in jobs):
         raise ValueError("LatentSync 1.6 官方最低需求為 18 GB VRAM；T4 只有 16 GB。請使用 --gpu L4 或 --gpu A100，或改 --model-version 1.5。")
@@ -411,7 +429,7 @@ def _run_jobs(jobs, args, client=None):
             write_json(progress_path, state)
 
         def remote_command(arguments, timeout):
-            code = "import subprocess\nsubprocess.run(" + repr(arguments) + ", check=True)"
+            code = subprocess_driver(arguments)
             execute_driver(client, session, work, code, timeout)
 
         save()

@@ -6,6 +6,7 @@ import array
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,22 @@ import remote_runtime as runtime
 
 
 class EnvironmentTests(unittest.TestCase):
+    def test_known_decord_metadata_warning_requires_real_decode(self):
+        result = subprocess.CompletedProcess([], 1, "decord 0.6.0 is not supported on this platform\n")
+        with tempfile.TemporaryDirectory() as directory, patch.object(runtime.subprocess, "run", return_value=result), patch.object(runtime, "run_cmd", side_effect=[None, subprocess.CalledProcessError(1, ["python", "decode"])]) as command:
+            with self.assertRaises(subprocess.CalledProcessError):
+                runtime.check_dependencies("python", Path(directory), {})
+            self.assertEqual(command.call_count, 2)
+
+    def test_dependency_conflicts_are_never_ignored_with_decord_warning(self):
+        for diagnostic in ("decord 0.6.0 is not supported on this platform\nother package requires missing\n",
+                           "decord 0.7.0 is not supported on this platform\n", ""):
+            result = subprocess.CompletedProcess([], 1, diagnostic)
+            with patch.object(runtime.subprocess, "run", return_value=result), patch.object(runtime, "run_cmd") as command:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    runtime.check_dependencies("python", Path("unused"), {})
+                command.assert_not_called()
+
     def test_every_direct_pin_invalidates_environment_cache(self):
         baseline = runtime.environment_fingerprint()
         self.assertEqual(runtime.ENV_VERSION, baseline)

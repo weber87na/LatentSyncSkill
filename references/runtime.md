@@ -4,9 +4,11 @@
 
 本機runner只使用Python標準函式庫；有ffprobe時可作媒體檢查。真實推論依賴官方Colab CLI；本機呼叫以argv陣列執行，不經shell拼接素材路徑。
 
-runner上傳共用config與remote_runtime到唯一的 `/content/ls_<run-id>`，用 `colab exec --file` 傳送driver；driver以 `subprocess.run(check=True)` 呼叫遠端程式並在成功後印出唯一標記。**CLI回傳0但沒有成功標記仍算失敗**，因為某些CLI版本會只顯示kernel錯誤卻不回傳非零exit code。
+runner上傳共用config與remote_runtime到唯一的 `/content/ls_<run-id>`，用 `colab exec --file` 傳送driver；driver以 `subprocess.Popen` 合併並逐行轉送 stdout／stderr，檢查退出碼後才印出唯一成功標記。這使子程序日誌能經 Jupyter 傳回 CLI，避免失敗後只剩泛用錯誤。**CLI回傳0但沒有成功標記仍算失敗**，因為某些CLI版本會只顯示kernel錯誤卻不回傳非零exit code。
 
 遠端環境在 `/content/latentsync-skill`；以檔案鎖防止同一root並行安裝／推論。採用uv管理的Python3.10、獨立venv、PyTorch2.5.1＋CUDA12.1 wheels、固定上游commit及固定Hugging Face revision。下載Whisper tiny、UNet、VAE與InsightFace必要偵測模型，`pip check`確認宣告相依性。
+
+Decord 0.6.0 Linux wheel 的內部標籤為舊 `cp36-cp36m`，會被新版 pip 判定平台不支援。安裝器只對完全相符的這一條警告驗證版本、Linux x86_64、wheel 標籤及實際 H.264 解碼；出現其他相依衝突或解碼失敗仍停止。這項例外不會修改上游套件 metadata，也不會跳過所有依賴檢查。
 
 環境與模型快取在同一runtime可重用；停止／回收runtime後會消失。沒有跨session自動Drive快取。不要同時在同一runtime啟動多個runner。
 
@@ -48,6 +50,8 @@ runner上傳共用config與remote_runtime到唯一的 `/content/ls_<run-id>`，�
 
 本地測試涵蓋參數與manifest驗證、假CLI生命週期、下載失敗、成功標記、續跑與安裝備份；實際FFmpeg測試涵蓋影格率、採樣率、裁切、offset、補齊／循環及輸出可解碼性。這些都不驗證人臉模型品質、Colab帳號權限、GPU供應或遠端CUDA執行。
 
-2026-10-24驗證紀錄：共69項測試。Windows上67通過、2項symlink權限相關測試跳過；Ubuntu WSL上65通過、4項因未安裝FFmpeg跳過。Windows實際FFmpeg測試與WSL實際symlink測試互補。另以真正WSL對中文／空格路徑執行雙工作dry-run，未呼叫Colab。Notebook通過nbformat格式、全部程式cell語法及內嵌原始碼一致性檢查；skill通過quick_validate。
+2026-10-24離線驗證紀錄：安裝 FFmpeg 的 Ubuntu WSL 上共73項測試全部通過，涵蓋實際子程序 stdout／stderr、非零退出碼、Decord警告與相依衝突，以及 FFmpeg 影音處理。另以隔離 Python3.10實際建置InsightFace，確認Decord可解碼，並注入依賴衝突驗證不會被例外忽略。Notebook通過全部程式cell語法、內嵌原始碼一致性與子程序串流檢查。
 
 首次真實smoke test建議5秒單人正面片段、1.6、A100、20steps、guidance1.5，記錄成品及report並檢查嘴型、聲音、時長、臉部身份與清理結果。只有完成這一步才可宣稱該帳號環境端到端已驗證。
+
+2026-10-24真實GPU驗證：Ubuntu WSL＋Colab CLI 0.7.4配置NVIDIA A100-SXM4-40GB，LatentSync1.6／FP16／20steps／guidance1.5／seed1247，完成960×960、25fps、58影格、2.32秒H.264／AAC輸出。遠端完整解碼、本機雜湊與ffprobe驗證通過，progress為completed／stopped，帳號查詢active_assignments為0。使用人物裁切放大素材，原遠景因人臉高度低於80px被上游拒絕；這不代表任意遠景可直接推論。使用者素材、成品與個人執行日誌不包含在公開儲存庫。
